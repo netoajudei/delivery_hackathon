@@ -44,7 +44,13 @@ Um sistema 100% automatizado que:
 Video demo
 
 https://lydwrbkqmagkvqkykqrk.supabase.co/storage/v1/object/public/MIDIA/deliveryHackhaton%20demo.mp4
----
+
+TESTE AO VIVO
+
+Como o foco do projeto é testar a experiência humanizada de atendimento não desenvolvemos a parte de cadastro de usuarios. Para efeito de testes basta mandar uma menagem para o link 
+
+https://wa.me/554898519922?text=ola
+
 
 ## 🚀 Stack Tecnológica
 
@@ -421,6 +427,9 @@ WhatsApp: "Pedido cancelado. O que gostaria?"
 ```
 
 ---
+
+
+
 
 ## 🔧 Edge Functions
 
