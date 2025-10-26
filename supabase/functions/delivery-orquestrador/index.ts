@@ -1,15 +1,11 @@
 /**
  * @name delivery-orquestrador
- * @version 3.1.0 (COM PROPOR-PEDIDO)
+ * @version 4.0.0 (SEM PROMPTS ESTÁTICOS)
  * @description 
- * Orquestrador integrado com propor-pedido
- * - Salva conversation_id na tabela clientes
- * - Ao detectar tool call, chama propor-pedido
- * - Usa finalizar-function-calling após processar
- * 
- * @changelog
- * - v3.1.0: Integração com propor-pedido
- * - v3.0.0: Integração com finalizar-function-calling
+ * Orquestrador 100% dinâmico - TODOS os prompts vêm do banco
+ * - Sem fallback hardcoded
+ * - Prompt vem exclusivamente de prompts_contexto.prompt_final
+ * - Functions vêm de prompts_contexto.functions
  */ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 const corsHeaders = {
@@ -87,11 +83,6 @@ serve(async (req)=>{
     if (clienteError) throw new Error(`Cliente não encontrado: ${clienteError.message}`);
     console.log('[ORQUESTRADOR] 🔀 Status:', cliente.status_conversa);
     console.log('[ORQUESTRADOR] 💬 Conversation:', cliente.conversation_id || 'NULL');
-    // BUSCAR CARDÁPIO
-    const { data: cardapio, error: cardapioError } = await supabase.from('cardapio').select('id, nome_item, preco, descricao_ia').eq('is_active', true);
-    if (cardapioError) throw new Error(`Erro cardápio: ${cardapioError.message}`);
-    const cardapioFormatado = cardapio.map((item)=>`- ${item.nome_item} (R$ ${item.preco}) [ID: ${item.id}]${item.descricao_ia ? ` - ${item.descricao_ia}` : ''}`).join('\n');
-    console.log('[ORQUESTRADOR] 📋 Cardápio:', cardapio.length, 'itens');
     // ROTEAMENTO
     let respostaFinal = '';
     switch(cliente.status_conversa){
@@ -99,80 +90,21 @@ serve(async (req)=>{
       case 'fazendo_pedido':
         {
           console.log('[ORQUESTRADOR] 🟢 ===== ROTA: NAVEGANDO =====');
-          // Buscar prompt
+          // BUSCAR PROMPT DO BANCO
           console.log('[ORQUESTRADOR] 🔍 Buscando prompt do banco...');
-          const { data: promptsData, error: promptError } = await supabase.from('prompts_contexto').select('prompt_final, functions').eq('contexto', 'navegando').eq('is_active', true).order('versao', {
-            ascending: false
-          }).limit(1);
-          let promptData = null;
+          const { data: promptsData, error: promptError } = await supabase.from('prompts_contexto').select('prompt_final, functions').eq('contexto', 'navegando').limit(1).single();
           if (promptError) {
             console.error('[ORQUESTRADOR] ❌ Erro ao buscar prompt:', promptError.message);
-          } else if (!promptsData || promptsData.length === 0) {
-            console.warn('[ORQUESTRADOR] ⚠️ Nenhum prompt encontrado no banco');
-          } else {
-            promptData = promptsData[0];
-            console.log('[ORQUESTRADOR] ✅ Prompt carregado do banco');
+            console.error('[ORQUESTRADOR] ❌ Error code:', promptError.code);
+            throw new Error(`Prompt não encontrado: ${promptError.message}`);
           }
-          // FALLBACK: Se não encontrou no banco, usar hardcoded
-          if (!promptData) {
-            console.warn('[ORQUESTRADOR] ⚠️ Usando prompt FALLBACK hardcoded');
-            promptData = {
-              prompt_final: `Você é um atendente virtual de delivery humanizado e amigável.
-
-# CARDÁPIO DISPONÍVEL:
-{CARDAPIO}
-
-# RESPONSABILIDADES:
-1. Ajudar o cliente a fazer pedidos
-2. Responder dúvidas sobre o cardápio
-3. Ser amigável e conversacional
-4. Quando o cliente fizer um pedido, chame a tool "identificar_pedido_usuario"
-
-# COMPORTAMENTO:
-- Use linguagem natural e amigável
-- Confirme itens quando houver dúvidas
-- Se pedir algo fora do cardápio, sugira alternativas
-- NUNCA invente itens que não estão no cardápio`,
-              functions: [
-                {
-                  type: 'function',
-                  name: 'identificar_pedido_usuario',
-                  description: 'Identifica se o usuário fez um pedido, extrai e retorna id do produto, nome do produto, quantidade e valor.',
-                  strict: true,
-                  parameters: {
-                    type: 'object',
-                    required: [
-                      'id_produto',
-                      'nome_produto',
-                      'quantidade',
-                      'valor'
-                    ],
-                    properties: {
-                      id_produto: {
-                        type: 'string',
-                        description: 'Identificador do produto'
-                      },
-                      nome_produto: {
-                        type: 'string',
-                        description: 'Nome do produto'
-                      },
-                      quantidade: {
-                        type: 'string',
-                        description: 'Quantidade do produto'
-                      },
-                      valor: {
-                        type: 'number',
-                        description: 'Valor do produto'
-                      }
-                    },
-                    additionalProperties: false
-                  }
-                }
-              ]
-            };
+          if (!promptsData || !promptsData.prompt_final) {
+            throw new Error('Prompt vazio ou inválido no banco');
           }
-          console.log('[ORQUESTRADOR] 🔧 Functions:', promptData.functions?.length || 0);
-          respostaFinal = await processarNavegando(supabase, cliente, mensagem, cardapioFormatado, promptData.prompt_final, promptData.functions);
+          console.log('[ORQUESTRADOR] ✅ Prompt carregado do banco');
+          console.log('[ORQUESTRADOR] 📝 Tamanho do prompt:', promptsData.prompt_final.length, 'caracteres');
+          console.log('[ORQUESTRADOR] 🔧 Functions:', promptsData.functions?.length || 0);
+          respostaFinal = await processarNavegando(supabase, cliente, mensagem, promptsData.prompt_final, promptsData.functions);
           break;
         }
       case 'finalizando_pedido':
@@ -231,14 +163,13 @@ serve(async (req)=>{
 // ========================================
 // PROCESSAR NAVEGANDO
 // ========================================
-async function processarNavegando(supabase, cliente, mensagem, cardapioFormatado, promptTemplate, functionsArray) {
+async function processarNavegando(supabase, cliente, mensagem, promptFinal, functionsArray) {
   console.log('[NAVEGANDO] 🎯 Processando...');
   // 1. BUSCAR/CRIAR CONVERSATION
   let conversationId = cliente.conversation_id;
   if (!conversationId) {
     console.log('[NAVEGANDO] 📝 Criando conversation...');
     conversationId = await criarConversation(cliente.id);
-    // ✅ SALVAR NA TABELA CLIENTES
     const { error: updateError } = await supabase.from('clientes').update({
       conversation_id: conversationId
     }).eq('id', cliente.id);
@@ -248,9 +179,9 @@ async function processarNavegando(supabase, cliente, mensagem, cardapioFormatado
       console.log('[NAVEGANDO] ✅ Conversation salvo na tabela clientes:', conversationId);
     }
   }
-  // 2. MONTAR PROMPT
-  const promptFinal = promptTemplate.replace('{CARDAPIO}', cardapioFormatado);
+  // 2. PREPARAR TOOLS
   const tools = Array.isArray(functionsArray) ? functionsArray : [];
+  console.log('[NAVEGANDO] 🔧 Tools:', tools.length);
   // 3. CHAMAR OPENAI
   const payload = {
     model: OPENAI_MODEL,
@@ -282,7 +213,7 @@ async function processarNavegando(supabase, cliente, mensagem, cardapioFormatado
     console.log('[NAVEGANDO]    - Nome:', args.nome_produto);
     console.log('[NAVEGANDO]    - Qtd:', args.quantidade);
     console.log('[NAVEGANDO]    - Valor:', args.valor);
-    // ✅ CHAMAR PROPOR-PEDIDO
+    // CHAMAR PROPOR-PEDIDO
     console.log('[NAVEGANDO] 📞 Chamando propor-pedido...');
     const proporPedidoResponse = await supabase.functions.invoke('propor-pedido', {
       body: {
@@ -291,7 +222,7 @@ async function processarNavegando(supabase, cliente, mensagem, cardapioFormatado
           id_produto: args.id_produto,
           nome_produto: args.nome_produto,
           quantidade: args.quantidade,
-          valor_total: args.valor // valor_total já vem do function calling
+          valor_total: args.valor
         }
       }
     });
@@ -300,7 +231,7 @@ async function processarNavegando(supabase, cliente, mensagem, cardapioFormatado
       throw new Error(`Propor-pedido falhou: ${proporPedidoResponse.error.message}`);
     }
     console.log('[NAVEGANDO] ✅ Propor-pedido invocado com sucesso');
-    // ✅ CHAMAR FINALIZADOR
+    // CHAMAR FINALIZADOR
     console.log('[NAVEGANDO] 🔧 Chamando finalizador function calling...');
     const finalizadorResponse = await supabase.functions.invoke('finalizar-pedido-function-calling', {
       body: {
@@ -320,7 +251,7 @@ async function processarNavegando(supabase, cliente, mensagem, cardapioFormatado
     const finalizadorData = finalizadorResponse.data;
     console.log('[NAVEGANDO] ✅ Finalizador concluído');
     console.log('[NAVEGANDO] 🆕 Nova conversation:', finalizadorData.novo_conversation_id);
-    // ✅ ATUALIZAR CONVERSATION_ID
+    // ATUALIZAR CONVERSATION_ID
     const { error: updateConvError } = await supabase.from('clientes').update({
       conversation_id: finalizadorData.novo_conversation_id,
       status_conversa: 'fazendo_pedido'
@@ -330,10 +261,8 @@ async function processarNavegando(supabase, cliente, mensagem, cardapioFormatado
     } else {
       console.log('[NAVEGANDO] ✅ Cliente atualizado com nova conversation');
     }
-    // NÃO RETORNAR RESPOSTA AQUI
-    // A proposta foi enviada via WhatsApp com botões
     console.log('[NAVEGANDO] 📱 Proposta enviada via WhatsApp (com botões)');
-    return ''; // Retorna vazio para não enviar mensagem duplicada
+    return '';
   } else {
     console.log('[NAVEGANDO] 🟢 ===== ROTA B: RESPOSTA NORMAL =====');
     let respostaTexto = '';

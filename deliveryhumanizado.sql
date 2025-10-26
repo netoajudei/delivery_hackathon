@@ -1,5 +1,5 @@
 
-\restrict HPaKEuZhSp0tXo395R6QYNb8b30zWKZgapOi3cFBEFxxA1BbSM1TpSJkW1DE1H0
+\restrict ve7FykjIy7YQogw1t3mgZaj7IxI4jltKtIN3RWnJVFrIBsqr3gUHh5G1jNhKSEh
 
 
 SET statement_timeout = 0;
@@ -108,6 +108,38 @@ CREATE TABLE IF NOT EXISTS "public"."cardapio" (
 ALTER TABLE "public"."cardapio" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."cartoes_credito" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "cliente_id" "uuid" NOT NULL,
+    "gateway_id" "text" NOT NULL,
+    "ultimos_quatro_digitos" character varying(4) NOT NULL,
+    "bandeira" "text",
+    "apelido_cartao" "text",
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "validade" "text"
+);
+
+
+ALTER TABLE "public"."cartoes_credito" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."cartoes_credito" IS 'Armazena referências de cartões de crédito (tokens de gateway)';
+
+
+
+COMMENT ON COLUMN "public"."cartoes_credito"."gateway_id" IS 'ID/Token do cartão no gateway de pagamento (ex: Stripe card_id)';
+
+
+
+COMMENT ON COLUMN "public"."cartoes_credito"."ultimos_quatro_digitos" IS 'Últimos 4 dígitos para identificação do usuário';
+
+
+
+COMMENT ON COLUMN "public"."cartoes_credito"."apelido_cartao" IS 'Apelido do cartão (ex: Cartão Pessoal)';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."clientes" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "phone_number" "text" NOT NULL,
@@ -132,6 +164,37 @@ CREATE TABLE IF NOT EXISTS "public"."config_sistema" (
 
 
 ALTER TABLE "public"."config_sistema" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."enderecos" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "cliente_id" "uuid" NOT NULL,
+    "nome_endereco" "text" DEFAULT 'Principal'::"text" NOT NULL,
+    "cep" "text" NOT NULL,
+    "rua" "text" NOT NULL,
+    "numero" "text" NOT NULL,
+    "complemento" "text",
+    "bairro" "text" NOT NULL,
+    "cidade" "text" NOT NULL,
+    "estado" character varying(2) NOT NULL,
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."enderecos" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."enderecos" IS 'Armazena os endereços de entrega dos clientes';
+
+
+
+COMMENT ON COLUMN "public"."enderecos"."cliente_id" IS 'Chave estrangeira para a tabela de clientes';
+
+
+
+COMMENT ON COLUMN "public"."enderecos"."nome_endereco" IS 'Apelido do endereço (ex: Casa, Trabalho)';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."itens_pedido" (
@@ -280,6 +343,11 @@ ALTER TABLE ONLY "public"."cardapio"
 
 
 
+ALTER TABLE ONLY "public"."cartoes_credito"
+    ADD CONSTRAINT "cartoes_credito_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."clientes"
     ADD CONSTRAINT "clientes_phone_number_key" UNIQUE ("phone_number");
 
@@ -292,6 +360,11 @@ ALTER TABLE ONLY "public"."clientes"
 
 ALTER TABLE ONLY "public"."config_sistema"
     ADD CONSTRAINT "config_sistema_pkey" PRIMARY KEY ("chave");
+
+
+
+ALTER TABLE ONLY "public"."enderecos"
+    ADD CONSTRAINT "enderecos_pkey" PRIMARY KEY ("id");
 
 
 
@@ -373,6 +446,16 @@ CREATE INDEX "idx_prompts_nome" ON "public"."prompts_contexto" USING "btree" ("n
 
 
 CREATE OR REPLACE TRIGGER "trigger_update_prompts_timestamp" BEFORE UPDATE ON "public"."prompts_contexto" FOR EACH ROW EXECUTE FUNCTION "public"."update_prompts_updated_at"();
+
+
+
+ALTER TABLE ONLY "public"."cartoes_credito"
+    ADD CONSTRAINT "cartoes_credito_cliente_id_fkey" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."enderecos"
+    ADD CONSTRAINT "enderecos_cliente_id_fkey" FOREIGN KEY ("cliente_id") REFERENCES "public"."clientes"("id") ON DELETE CASCADE;
 
 
 
@@ -599,6 +682,12 @@ GRANT ALL ON TABLE "public"."cardapio" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."cartoes_credito" TO "anon";
+GRANT ALL ON TABLE "public"."cartoes_credito" TO "authenticated";
+GRANT ALL ON TABLE "public"."cartoes_credito" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."clientes" TO "anon";
 GRANT ALL ON TABLE "public"."clientes" TO "authenticated";
 GRANT ALL ON TABLE "public"."clientes" TO "service_role";
@@ -608,6 +697,12 @@ GRANT ALL ON TABLE "public"."clientes" TO "service_role";
 GRANT ALL ON TABLE "public"."config_sistema" TO "anon";
 GRANT ALL ON TABLE "public"."config_sistema" TO "authenticated";
 GRANT ALL ON TABLE "public"."config_sistema" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."enderecos" TO "anon";
+GRANT ALL ON TABLE "public"."enderecos" TO "authenticated";
+GRANT ALL ON TABLE "public"."enderecos" TO "service_role";
 
 
 
@@ -713,6 +808,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
-\unrestrict HPaKEuZhSp0tXo395R6QYNb8b30zWKZgapOi3cFBEFxxA1BbSM1TpSJkW1DE1H0
+\unrestrict ve7FykjIy7YQogw1t3mgZaj7IxI4jltKtIN3RWnJVFrIBsqr3gUHh5G1jNhKSEh
 
 RESET ALL;

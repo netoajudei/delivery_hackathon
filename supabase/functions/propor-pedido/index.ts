@@ -47,6 +47,31 @@ serve(async (req)=>{
       throw new Error(`Cliente não encontrado: ${cliente_id}`);
     }
     console.log('[PROPOR_PEDIDO] ✅ Cliente:', cliente.phone_number);
+    // BUSCAR PEDIDO ATIVO E ITENS
+    console.log('[PROPOR_PEDIDO] 🛒 Buscando carrinho atual...');
+    const { data: pedidoAtivo } = await supabase.from('pedidos').select('id, total_pedido').eq('cliente_id', cliente_id).eq('status', 'iniciado').order('created_at', {
+      ascending: false
+    }).limit(1).single();
+    let itensCarrinho = [];
+    let totalCarrinhoAtual = 0;
+    if (pedidoAtivo) {
+      console.log('[PROPOR_PEDIDO] ✅ Pedido ativo encontrado:', pedidoAtivo.id);
+      const { data: itens } = await supabase.from('itens_pedido').select(`
+          quantidade,
+          preco_unitario_no_momento,
+          cardapio:cardapio_item_id (
+            nome_item
+          )
+        `).eq('pedido_id', pedidoAtivo.id);
+      if (itens && itens.length > 0) {
+        itensCarrinho = itens;
+        totalCarrinhoAtual = itens.reduce((sum, item)=>sum + item.quantidade * item.preco_unitario_no_momento, 0);
+        console.log('[PROPOR_PEDIDO] 🛒 Itens no carrinho:', itens.length);
+        console.log('[PROPOR_PEDIDO] 💰 Total carrinho atual: R$', totalCarrinhoAtual.toFixed(2));
+      }
+    } else {
+      console.log('[PROPOR_PEDIDO] ℹ️ Nenhum pedido ativo (carrinho vazio)');
+    }
     // BUSCAR WAME API KEY
     console.log('[PROPOR_PEDIDO] 🔑 Buscando WAME_API_KEY...');
     const { data: configData, error: configError } = await supabase.from('config_sistema').select('valor').eq('chave', 'wame_api_key').single();
@@ -62,15 +87,31 @@ serve(async (req)=>{
     console.log('[PROPOR_PEDIDO] 🧮 Cálculo:');
     console.log(`[PROPOR_PEDIDO]    Quantidade: ${quantidade_num}`);
     console.log(`[PROPOR_PEDIDO]    Valor Final: R$ ${valor_final.toFixed(2)}`);
+    // MONTAR LISTA DE ITENS DO CARRINHO
+    let listaItens = '';
+    if (itensCarrinho.length > 0) {
+      listaItens += '📦 *Itens no carrinho:*\n\n';
+      for (const item of itensCarrinho){
+        const subtotal = item.quantidade * item.preco_unitario_no_momento;
+        listaItens += `${item.quantidade}x ${item.cardapio.nome_item}\n`;
+        listaItens += `   R$ ${item.preco_unitario_no_momento.toFixed(2)} cada = R$ ${subtotal.toFixed(2)}\n\n`;
+      }
+    }
+    // ADICIONAR ITEM NOVO
+    listaItens += `➕ *Novo item:*\n\n`;
+    listaItens += `${quantidade}x ${nome_produto}\n`;
+    listaItens += `   R$ ${(valor_final / quantidade_num).toFixed(2)} cada = R$ ${valor_final.toFixed(2)}\n\n`;
+    // CALCULAR TOTAIS
+    const subtotalPedido = totalCarrinhoAtual + valor_final;
+    const valorEntrega = 5.00; // Pode vir do banco depois
+    const valorTotalFinal = subtotalPedido + valorEntrega;
+    listaItens += `━━━━━━━━━━━━━━━━━━━━\n`;
+    listaItens += `💰 Subtotal: R$ ${subtotalPedido.toFixed(2)}\n`;
+    listaItens += `🚚 Entrega: R$ ${valorEntrega.toFixed(2)}\n`;
+    listaItens += `━━━━━━━━━━━━━━━━━━━━\n`;
+    listaItens += `🎯 *TOTAL: R$ ${valorTotalFinal.toFixed(2)}*\n\n`;
     // MONTAR MENSAGEM
-    const mensagem_texto = `🛒 *Confirmação de Pedido*
-
-Você pediu:
-
-*${quantidade}x ${nome_produto}*
-Valor: R$ ${valor_final.toFixed(2)}
-
-Está correto?`;
+    const mensagem_texto = `🛒 *Confirmação de Pedido*\n\n${listaItens}Está correto?`;
     // MONTAR PAYLOADS DOS BOTÕES
     // Incluir TODOS os dados necessários no payload
     const payload_add_continuar = JSON.stringify({
