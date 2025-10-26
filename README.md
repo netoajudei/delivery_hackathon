@@ -40,6 +40,10 @@ Um sistema 100% automatizado que:
 - ✅ Reduz custos em mais de **80%**
 - ✅ Atende 24/7 sem limitação de capacidade
 
+
+Video demo
+
+https://lydwrbkqmagkvqkykqrk.supabase.co/storage/v1/object/public/MIDIA/deliveryHackhaton%20demo.mp4
 ---
 
 ## 🚀 Stack Tecnológica
@@ -70,7 +74,7 @@ Um sistema 100% automatizado que:
 ┌─────────────────────────────────────────┐
 │         OpenAI APIs                     │
 ├─────────────────────────────────────────┤
-│ • Responses API (GPT-4o-mini) ⭐ NOVO   │
+│ • Responses API (GPT-5) ⭐ NOVO   │
 │ • Whisper API (transcrição de áudio)    │
 │ • Conversations API (contexto)          │
 │ • Function Calling (estruturação)       │
